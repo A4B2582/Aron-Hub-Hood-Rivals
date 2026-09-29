@@ -1,0 +1,602 @@
+-- WindUI Kütüphanesi İçin Alternatif Yansımalı (Fallback) Yükleme Sistemi
+local WindUI = nil
+
+local links = {
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/main.lua",
+    "https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/main.lua",
+    "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
+}
+
+for _, link in ipairs(links) do
+    local success, result = pcall(function()
+        return loadstring(game:HttpGet(link))()
+    end)
+    if success and result then
+        WindUI = result
+        break
+    end
+end
+
+if not WindUI then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Aron Hub Error",
+        Text = "Internet connection error! Could not load WindUI library.",
+        Duration = 6
+    })
+    return
+end
+
+-- Ana Pencere Anında Açılış
+local Window = WindUI:CreateWindow({
+    Title = "Aron Hub | Hood Rivals",
+    Icon = "rbxassetid://6023426915",
+    Author = "qmiracxws",
+    Folder = "AronHubHoodRivals",
+    Size = UDim2.fromOffset(500, 350),
+    Transparent = true,
+    Theme = "Dark",
+    Resizable = false,
+})
+
+WindUI:Notify({
+    Title = "Aron Hub",
+    Content = "Script successfully loaded!",
+    Duration = 2
+})
+
+-- Sekmeler
+local CombatTab = Window:Tab({ Title = "Combat", Icon = "swords" })
+local VisualsTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
+local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
+
+-- Servisler ve Global Değişkenler
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
+
+-- Güvenli Takım Kontrolü
+local function isTeammate(player)
+    if player == LocalPlayer then return true end
+    if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+        return true
+    end
+    return false
+end
+
+-- Metin Girişlerini Güvenli Sayıya Çevirici
+local function parseInput(Value, default)
+    if type(Value) == "string" then
+        return tonumber(Value) or default
+    elseif type(Value) == "number" then
+        return Value
+    elseif type(Value) == "table" then
+        return tonumber(Value.Value or Value.Text or Value[1]) or default
+    end
+    return default
+end
+
+-- Hood Rivals İçin Profesyonel Can Ayrıştırıcı
+local function getCleanHealth(humanoid)
+    if not humanoid then return 100, 100 end
+    local currentHealth = humanoid.Health
+    local maxHealth = humanoid.MaxHealth
+
+    if maxHealth > 100 then
+        maxHealth = 100
+    end
+    
+    if currentHealth > maxHealth then
+        currentHealth = maxHealth
+    end
+
+    return math.floor(math.clamp(currentHealth, 0, maxHealth)), math.floor(maxHealth)
+end
+
+-- ==========================================
+-- 1. COMBAT TAB (Sayı Yazmalı FOV & Aimbot)
+-- ==========================================
+
+local aimbotEnabled = false
+local aimbotConnection = nil
+local fovEnabled = false
+local currentFovRadius = 150 -- Varsayılan Başlangıç FOV Boyutu
+
+local fovCircle = nil
+pcall(function()
+    if Drawing then
+        fovCircle = Drawing.new("Circle")
+        fovCircle.Visible = false
+        fovCircle.Filled = false
+        fovCircle.Thickness = 1.5
+        fovCircle.Color = Color3.fromRGB(255, 255, 255)
+        fovCircle.Transparency = 0.8
+        fovCircle.NumSides = 64
+        fovCircle.Radius = currentFovRadius
+    end
+end)
+
+CombatTab:Toggle({
+    Title = "FOV Circle",
+    Default = false,
+    Callback = function(State)
+        fovEnabled = State
+        if fovCircle then
+            fovCircle.Visible = State
+        end
+    end
+})
+
+CombatTab:Input({
+    Title = "FOV Size (Sayı Yaz)",
+    Default = "150",
+    Placeholder = "Örn: 200",
+    Callback = function(Value)
+        local num = parseInput(Value, 150)
+        currentFovRadius = num
+        if fovCircle then
+            pcall(function()
+                fovCircle.Radius = currentFovRadius
+            end)
+        end
+    end
+})
+
+RunService.RenderStepped:Connect(function()
+    if fovCircle then
+        if fovEnabled then
+            pcall(function()
+                fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                fovCircle.Radius = currentFovRadius
+                fovCircle.Visible = true
+            end)
+        else
+            fovCircle.Visible = false
+        end
+    end
+end)
+
+local function getClosestPlayerToCursorFiltered()
+    local closestPlayer = nil
+    local shortestDistance = currentFovRadius
+    local mousePos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and not isTeammate(player) and player.Character then
+            local head = player.Character:FindFirstChild("Head")
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if head and humanoid and humanoid.Health > 0 then
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local screenPos2D = Vector2.new(screenPoint.X, screenPoint.Y)
+                    local distance = (screenPos2D - mousePos).Magnitude
+                    if (not fovEnabled or distance <= currentFovRadius) and distance < shortestDistance then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+CombatTab:Toggle({
+    Title = "Aimbot",
+    Default = false,
+    Callback = function(State)
+        aimbotEnabled = State
+        if State then
+            aimbotConnection = RunService.RenderStepped:Connect(function()
+                if aimbotEnabled then
+                    local target = getClosestPlayerToCursorFiltered()
+                    if target and target.Character then
+                        local head = target.Character:FindFirstChild("Head")
+                        if head then Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position) end
+                    end
+                end
+            end)
+        else
+            if aimbotConnection then aimbotConnection:Disconnect() aimbotConnection = nil end
+        end
+    end
+})
+
+-- No Recoil
+local noRecoilEnabled = false
+local noRecoilConnection = nil
+
+CombatTab:Toggle({
+    Title = "No Recoil",
+    Default = false,
+    Callback = function(State)
+        noRecoilEnabled = State
+        if State then
+            noRecoilConnection = RunService.RenderStepped:Connect(function()
+                if noRecoilEnabled then
+                    pcall(function()
+                        local cameraShaker = Workspace:FindFirstChild("CameraShaker")
+                        if cameraShaker then cameraShaker:Destroy() end
+
+                        if LocalPlayer.Character then
+                            for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+                                if tool:IsA("Tool") then
+                                    for _, v in ipairs(tool:GetDescendants()) do
+                                        if v:IsA("NumberValue") or v:IsA("IntValue") then
+                                            local name = string.lower(v.Name)
+                                            if name:find("recoil") or name:find("spread") or name:find("kick") then
+                                                v.Value = 0
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end)
+        else
+            if noRecoilConnection then noRecoilConnection:Disconnect() noRecoilConnection = nil end
+        end
+    end
+})
+
+-- Combat Player ESP
+local combatEspConnection = nil
+local activeHighlights = {}
+local activeBillboards = {}
+
+CombatTab:Toggle({
+    Title = "Player ESP",
+    Default = false,
+    Callback = function(State)
+        if State then
+            local function setupPlayer(player)
+                if player == LocalPlayer then return end
+                
+                local function applyVisuals(character)
+                    if not character then return end
+                    
+                    pcall(function()
+                        local oldH = character:FindFirstChild("AronHighlight")
+                        if oldH then oldH:Destroy() end
+                        local oldB = character:FindFirstChild("AronInfo")
+                        if oldB then oldB:Destroy() end
+
+                        local teammate = isTeammate(player)
+                        local boxColor = teammate and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(255, 0, 0)
+
+                        local highlight = Instance.new("Highlight")
+                        highlight.Name = "AronHighlight"
+                        highlight.Adornee = character
+                        highlight.FillColor = boxColor
+                        highlight.FillTransparency = 0.5
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        highlight.OutlineTransparency = 0
+                        highlight.Parent = character
+                        activeHighlights[player] = highlight
+
+                        local head = character:WaitForChild("Head", 5)
+                        if head then
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "AronInfo"
+                            billboard.Adornee = head
+                            billboard.Size = UDim2.new(0, 200, 0, 50)
+                            billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+                            billboard.AlwaysOnTop = true
+
+                            local textLabel = Instance.new("TextLabel")
+                            textLabel.Size = UDim2.new(1, 0, 1, 0)
+                            textLabel.BackgroundTransparency = 1
+                            textLabel.TextColor3 = boxColor
+                            textLabel.TextStrokeTransparency = 0
+                            textLabel.TextSize = 14
+                            textLabel.Font = Enum.Font.SourceSansBold
+                            textLabel.Parent = billboard
+
+                            billboard.Parent = character
+                            activeBillboards[player] = billboard
+
+                            local connection
+                            connection = RunService.RenderStepped:Connect(function()
+                                if not character or not character.Parent or not player.Character then
+                                    if connection then connection:Disconnect() end
+                                    return
+                                end
+
+                                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                                local localChar = LocalPlayer.Character
+
+                                if humanoid and localChar then
+                                    local hrp = localChar:FindFirstChild("HumanoidRootPart")
+                                    local charHrp = character:FindFirstChild("HumanoidRootPart")
+                                    if hrp and charHrp then
+                                        local distance = math.floor((hrp.Position - charHrp.Position).Magnitude)
+                                        local health, maxHealth = getCleanHealth(humanoid)
+                                        local tag = teammate and " [TEAM]" or " [ENEMY]"
+                                        textLabel.Text = player.Name .. tag .. "\nHP: " .. health .. "/" .. maxHealth .. " | Dist: " .. distance .. "m"
+                                    end
+                                end
+                            end)
+                        end
+                    end)
+                end
+
+                if player.Character then applyVisuals(player.Character) end
+                player.CharacterAdded:Connect(applyVisuals)
+            end
+
+            for _, p in ipairs(Players:GetPlayers()) do setupPlayer(p) end
+            combatEspConnection = Players.PlayerAdded:Connect(setupPlayer)
+        else
+            if combatEspConnection then
+                combatEspConnection:Disconnect()
+                combatEspConnection = nil
+            end
+
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Character then
+                    pcall(function()
+                        local h = player.Character:FindFirstChild("AronHighlight") if h then h:Destroy() end
+                        local b = player.Character:FindFirstChild("AronInfo") if b then b:Destroy() end
+                    end)
+                end
+            end
+            activeHighlights = {}
+            activeBillboards = {}
+        end
+    end
+})
+
+-- ==========================================
+-- 2. VISUALS TAB (Sayı Yazmalı Speed, ESP)
+-- ==========================================
+
+local speedEnabled = false
+local customSpeed = 16
+local speedConnection = nil
+
+VisualsTab:Toggle({
+    Title = "WalkSpeed Hack",
+    Default = false,
+    Callback = function(State)
+        speedEnabled = State
+        if State then
+            speedConnection = RunService.RenderStepped:Connect(function()
+                if speedEnabled and LocalPlayer.Character then
+                    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.WalkSpeed = customSpeed end
+                end
+            end)
+        else
+            if speedConnection then speedConnection:Disconnect() speedConnection = nil end
+            if LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.WalkSpeed = 16 end
+            end
+        end
+    end
+})
+
+VisualsTab:Input({
+    Title = "Speed Value (Sayı Yaz)",
+    Default = "16",
+    Placeholder = "Örn: 50",
+    Callback = function(Value)
+        customSpeed = parseInput(Value, 16)
+    end
+})
+
+-- Arcade Game Aimbot
+local arcadeAimbotEnabled = false
+local arcadeAimbotConnection = nil
+
+local function getClosestPlayerToCursorUniversal()
+    local closestPlayer = nil
+    local shortestDistance = currentFovRadius
+    local mousePos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local head = player.Character:FindFirstChild("Head")
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if head and humanoid and humanoid.Health > 0 then
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local screenPos2D = Vector2.new(screenPoint.X, screenPoint.Y)
+                    local distance = (screenPos2D - mousePos).Magnitude
+                    if (not fovEnabled or distance <= currentFovRadius) and distance < shortestDistance then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+VisualsTab:Toggle({
+    Title = "Arcade Game Aimbot",
+    Default = false,
+    Callback = function(State)
+        arcadeAimbotEnabled = State
+        if State then
+            arcadeAimbotConnection = RunService.RenderStepped:Connect(function()
+                if arcadeAimbotEnabled then
+                    local target = getClosestPlayerToCursorUniversal()
+                    if target and target.Character then
+                        local head = target.Character:FindFirstChild("Head")
+                        if head then Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position) end
+                    end
+                end
+            end)
+        else
+            if arcadeAimbotConnection then arcadeAimbotConnection:Disconnect() arcadeAimbotConnection = nil end
+        end
+    end
+})
+
+-- Arcade Player ESP
+local arcadeEspConnection = nil
+local arcadeHighlights = {}
+local arcadeBillboards = {}
+
+VisualsTab:Toggle({
+    Title = "Arcade Player ESP",
+    Default = false,
+    Callback = function(State)
+        if State then
+            local function setupArcadePlayer(player)
+                if player == LocalPlayer then return end
+                
+                local function applyArcadeVisuals(character)
+                    if not character then return end
+                    
+                    pcall(function()
+                        local oldH = character:FindFirstChild("ArcadeHighlight")
+                        if oldH then oldH:Destroy() end
+                        local oldB = character:FindFirstChild("ArcadeInfo")
+                        if oldB then oldB:Destroy() end
+
+                        local arcadeColor = Color3.fromRGB(255, 170, 0)
+
+                        local highlight = Instance.new("Highlight")
+                        highlight.Name = "ArcadeHighlight"
+                        highlight.Adornee = character
+                        highlight.FillColor = arcadeColor
+                        highlight.FillTransparency = 0.4
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        highlight.OutlineTransparency = 0
+                        highlight.Parent = character
+                        arcadeHighlights[player] = highlight
+
+                        local head = character:WaitForChild("Head", 5)
+                        if head then
+                            local billboard = Instance.new("BillboardGui")
+                            billboard.Name = "ArcadeInfo"
+                            billboard.Adornee = head
+                            billboard.Size = UDim2.new(0, 200, 0, 50)
+                            billboard.StudsOffset = Vector3.new(0, 3, 0)
+                            billboard.AlwaysOnTop = true
+
+                            local textLabel = Instance.new("TextLabel")
+                            textLabel.Size = UDim2.new(1, 0, 1, 0)
+                            textLabel.BackgroundTransparency = 1
+                            textLabel.TextColor3 = arcadeColor
+                            textLabel.TextStrokeTransparency = 0
+                            textLabel.TextSize = 13
+                            textLabel.Font = Enum.Font.GothamBold
+                            textLabel.Parent = billboard
+
+                            billboard.Parent = character
+                            arcadeBillboards[player] = billboard
+
+                            local connection
+                            connection = RunService.RenderStepped:Connect(function()
+                                if not character or not character.Parent or not player.Character then
+                                    if connection then connection:Disconnect() end
+                                    return
+                                end
+
+                                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                                local localChar = LocalPlayer.Character
+
+                                if humanoid and localChar then
+                                    local hrp = localChar:FindFirstChild("HumanoidRootPart")
+                                    local charHrp = character:FindFirstChild("HumanoidRootPart")
+                                    if hrp and charHrp then
+                                        local distance = math.floor((hrp.Position - charHrp.Position).Magnitude)
+                                        local health, maxHealth = getCleanHealth(humanoid)
+                                        textLabel.Text = "[ARCADE] " .. player.Name .. "\nHP: " .. health .. "/" .. maxHealth .. " | " .. distance .. "m"
+                                    end
+                                end
+                            end)
+                        end
+                    end)
+                end
+
+                if player.Character then applyArcadeVisuals(player.Character) end
+                player.CharacterAdded:Connect(applyArcadeVisuals)
+            end
+
+            for _, p in ipairs(Players:GetPlayers()) do setupArcadePlayer(p) end
+            arcadeEspConnection = Players.PlayerAdded:Connect(setupArcadePlayer)
+        else
+            if arcadeEspConnection then
+                arcadeEspConnection:Disconnect()
+                arcadeEspConnection = nil
+            end
+
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Character then
+                    pcall(function()
+                        local h = player.Character:FindFirstChild("ArcadeHighlight") if h then h:Destroy() end
+                        local b = player.Character:FindFirstChild("ArcadeInfo") if b then b:Destroy() end
+                    end)
+                end
+            end
+            arcadeHighlights = {}
+            arcadeBillboards = {}
+        end
+    end
+})
+
+-- ==========================================
+-- 3. MISC TAB (Anti-Kick & Anti-Ban)
+-- ==========================================
+
+MiscTab:Toggle({
+    Title = "Anti-Kick Protection",
+    Default = false,
+    Callback = function(State)
+        if State then
+            pcall(function()
+                local mt = getrawmetatable(game)
+                setreadonly(mt, false)
+                local oldNamecall = mt.__namecall
+                
+                mt.__namecall = newcclosure(function(self, ...)
+                    local method = getnamecallmethod()
+                    if method == "Kick" and self == LocalPlayer then
+                        return
+                    end
+                    return oldNamecall(self, ...)
+                end)
+                setreadonly(mt, true)
+            end)
+        end
+    end
+})
+
+MiscTab:Toggle({
+    Title = "Advanced Anti-Ban",
+    Default = false,
+    Callback = function(State)
+        if State then
+            pcall(function()
+                local mt = getrawmetatable(game)
+                setreadonly(mt, false)
+                local oldNamecall = mt.__namecall
+                
+                mt.__namecall = newcclosure(function(self, ...)
+                    local method = getnamecallmethod()
+                    if method == "FireServer" or method == "InvokeServer" then
+                        local remoteName = tostring(self):lower()
+                        if remoteName:find("ban") or remoteName:find("kick") or remoteName:find("cheat") or remoteName:find("detect") or remoteName:find("report") then
+                            return
+                        end
+                    end
+                    
+                    if (method == "Kick" or method == "Ban") and self == LocalPlayer then
+                        return
+                    end
+                    
+                    return oldNamecall(self, ...)
+                end)
+                setreadonly(mt, true)
+            end)
+        end
+    end
+})
