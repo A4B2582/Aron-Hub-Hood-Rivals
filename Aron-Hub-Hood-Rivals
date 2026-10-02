@@ -19,7 +19,7 @@ end
 
 if not WindUI then
     game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Aron Hub Error",
+        Title = "Aselsan Hub Error",
         Text = "Internet connection error! Could not load WindUI library.",
         Duration = 6
     })
@@ -28,10 +28,10 @@ end
 
 -- Ana Pencere Anında Açılış
 local Window = WindUI:CreateWindow({
-    Title = "Aron Hub | Hood Rivals",
+    Title = "Aselsan Hub | Hood Rivals",
     Icon = "rbxassetid://6023426915",
     Author = "qmiracxws",
-    Folder = "AronHubHoodRivals",
+    Folder = "AselsanHubHoodRivals",
     Size = UDim2.fromOffset(500, 350),
     Transparent = true,
     Theme = "Dark",
@@ -39,7 +39,7 @@ local Window = WindUI:CreateWindow({
 })
 
 WindUI:Notify({
-    Title = "Aron Hub",
+    Title = "Aselsan Hub",
     Content = "Script successfully loaded!",
     Duration = 2
 })
@@ -259,16 +259,16 @@ CombatTab:Toggle({
                     if not character then return end
                     
                     pcall(function()
-                        local oldH = character:FindFirstChild("AronHighlight")
+                        local oldH = character:FindFirstChild("AselsanHighlight")
                         if oldH then oldH:Destroy() end
-                        local oldB = character:FindFirstChild("AronInfo")
+                        local oldB = character:FindFirstChild("AselsanInfo")
                         if oldB then oldB:Destroy() end
 
                         local teammate = isTeammate(player)
                         local boxColor = teammate and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(255, 0, 0)
 
                         local highlight = Instance.new("Highlight")
-                        highlight.Name = "AronHighlight"
+                        highlight.Name = "AselsanHighlight"
                         highlight.Adornee = character
                         highlight.FillColor = boxColor
                         highlight.FillTransparency = 0.5
@@ -280,7 +280,7 @@ CombatTab:Toggle({
                         local head = character:WaitForChild("Head", 5)
                         if head then
                             local billboard = Instance.new("BillboardGui")
-                            billboard.Name = "AronInfo"
+                            billboard.Name = "AselsanInfo"
                             billboard.Adornee = head
                             billboard.Size = UDim2.new(0, 200, 0, 50)
                             billboard.StudsOffset = Vector3.new(0, 2.5, 0)
@@ -338,8 +338,8 @@ CombatTab:Toggle({
             for _, player in ipairs(Players:GetPlayers()) do
                 if player.Character then
                     pcall(function()
-                        local h = player.Character:FindFirstChild("AronHighlight") if h then h:Destroy() end
-                        local b = player.Character:FindFirstChild("AronInfo") if b then b:Destroy() end
+                        local h = player.Character:FindFirstChild("AselsanHighlight") if h then h:Destroy() end
+                        local b = player.Character:FindFirstChild("AselsanInfo") if b then b:Destroy() end
                     end)
                 end
             end
